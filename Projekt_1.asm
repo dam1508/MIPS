@@ -3,6 +3,7 @@
 fileName:	.asciiz "C:/Users/damia/OneDrive/Pulpit/Studia/Arko/MIPS/test.txt"
 fileName2:	.asciiz "C:/Users/damia/OneDrive/Pulpit/Studia/Arko/MIPS/tes.txt"
 fileError:	.asciiz "file not found"
+incNumber:	.space 128
 newLine:	.space 1024
 buffer:		.space 1024
 
@@ -37,6 +38,8 @@ read_file:
 	syscall
 	
 	la $s5, buffer			#storing buffer in s5
+	la $s6, newLine			#here a line to copy will be stored
+	la $s7, incNumber		#here incremented number will be stored
 	move $s3, $s5			#s3 will remember address of current line
 	li $t3, 0			#is it a number? 0 - maybe, 1 - yes, 2 - no
 	li $t4, 0			#number length
@@ -47,19 +50,21 @@ read_file:
 load_byte:
 
 	lb $t0, 0($s5)	
-	addiu $t6, $t6, 1		#line length increase		
 	
-	beq $t0, $0, end		#EOF
-	beq $t0, ' ', new_word		#end of word
-	beq $t0, '\t', new_word
-	
+	beq $t0, $0, increment_number	#EOF
 	#seq $t9, $t0, '\n'
 	beq $t0, '\n', new_line		#end of line
 	
+	
+	addiu $t6, $t6, 1		#line length increase
+	beq $t0, '\r', next
+	beq $t0, ' ', new_word		#end of word
+	beq $t0, '\t', new_word	
+	
 	beq $t3, 2, next_nan		#it's already not a number, so go to next
 	beq $t0, '.', next_dot		#it's a dot
-	bltu $t0, 48, next_nan		#if it's less than 0 go to next step (not a number)
-	bgtu $t0, 57, next_nan		#if it's greater than 9 go to next step (not a number)
+	bltu $t0, '0', next_nan		#if it's less than 0 go to next step (not a number)
+	bgtu $t0, '9', next_nan		#if it's greater than 9 go to next step (not a number)
 	
 	#b next_num 			#if non of these happened, it's a number
 
@@ -87,16 +92,6 @@ next_nan:
 	
 	b next
 	
-new_word:
-
-	beq $t3, 1, save_num_address	#if current word was a number remember it
-	
-	li $t3, 0			#resetting t3
-	li $t4, 0			#resetting number length
-	li $t5, 0			#resetting number of dots
-	
-	b next
-	
 new_line:
 
 	beq $t3, 1, save_num_address2	#if current word was a number remember it
@@ -113,7 +108,17 @@ new_line:
 	li $t6, 0			#resetting line length
 	
 	b load_byte
+
+new_word:
+
+	beq $t3, 1, save_num_address	#if current word was a number remember it
 	
+	li $t3, 0			#resetting t3
+	li $t4, 0			#resetting number length
+	li $t5, 0			#resetting number of dots
+	
+	b next
+		
 save_line_length:
 
 	move $t8, $t6			#saves line length
@@ -129,8 +134,10 @@ next:
 	
 save_num_address:
 	
-	subu $s2, $s5, $t4		#saves number address
+	#subu $s2, $s5, $t4		#saves number address
+	subu $s2, $s5, 1
 	move $s4, $s3			#saves address of a line with a number
+	move $t1, $t4
 	
 	li $t3, 0			#resetting t3
 	li $t4, 0			#resetting number length
@@ -142,8 +149,10 @@ save_num_address:
 save_num_address2:
 
 	move $t8, $t6			#saves line length
-	subu $s2, $s5, $t4		#saves number address
+	#subu $s2, $s5, $t4		#saves number address
+	subu $s2, $s5, 1
 	move $s4, $s3			#saves address of a line with a number
+	move $t1, $t4
 
 	li $t3, 0			#resetting t3
 	li $t4, 0			#resetting number length
@@ -157,27 +166,89 @@ save_num_address2:
 	
 	b load_byte
 	
-file_error:
+increment_number:
 
+	#beq $t5, 1, find_dot
+	
+	addu $s7, $s7, $t1
+	
+	lb $t0, ($s2)
+	subiu $s2, $s2, 1
+	beq $t0, '9', nine_exc
+	add $t0, $t0, 1
+	sb $t0, ($s7)
+	subiu $t1, $t1, 1
+	
+	beq $t1, 0, write_to_file
+	subiu $s7, $s7, 1
+	b copy_rest
+	
+nine_exc:
+
+	addiu $s7, $s7, 1		#possible increase of numbers (99 -> 100)
+	
+nine_exc_cont:
+	
+	li $t0, 0
+	#sb $t0, ($s7)
+	#subiu $t1, $t1, 1
+	#lb $t0, ($s2)
+	#subiu $s2, $s2, 1
+	#subiu $s7, $s7, 1
+	b copy_rest
+	beq $t0, ' ', finish_number
+	beq $t0, '9', nine_exc_cont
+	#else
+	
+increment_next_number:
+
+	addiu $t0, $t0, 1
+	sb $t0, ($s7)
+	subiu $t1, $t1, 1
+	
+	beq $t1, 0, write_to_file
+	subiu $s7, $s7,1
+	b copy_rest
+	
+finish_number:
+
+	li $t0, 1
+	sb $t0, ($s7)
+	b write_to_file
+	
+copy_rest:
+
+	lb $t0, 0($s2)
+	subiu $s2, $s2, 1
+	addiu $t0, $t0, 1
+	sb $t0, 0($s7)
+	subiu $t1, $t1, 1
+	
+	beq $t1, 0, write_to_file
+	subiu $s7, $s7, 1
+	b copy_rest
+	
+copy_line:
+	
+	lb $t0, 0($s4)
+	beq $t0, '\n', write_to_file
+	sb $t0, 0($s6)
+	
+	addiu $s4, $s4, 1
+	addiu $s6, $s6, 1
+	
+	b copy_line
+	
+write_to_file:
+	
+	subu $s6, $s6, $t8
 	li $v0, 4
-	la $a0, fileError
+	move $a0, $s7
 	syscall
+	
+	b end
 	
 end:
-	lb $t0, 0($s4)
-	lb $t1, 0($s2)
-	
-	li $v0, 11
-	move $a0, $t0
-	syscall
-	
-	li $v0, 11
-	move $a0, $t1
-	syscall
-	
-	li $v0, 1
-	move $a0, $t8
-	syscall
 	
 	li $v0, 16
 	move $a0, $s1
