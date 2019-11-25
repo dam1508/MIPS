@@ -1,31 +1,42 @@
 		.data
 	
 fileNameWin:	.asciiz "C:/Users/damia/OneDrive/Pulpit/Studia/Arko/MIPS/test.txt"
-fileNameLin:	.asciiz "/home/dam1508/Pulpit/Arko/test.txt"
-fileError:	.asciiz "file not found"
+fileNameLin:	.asciiz "/home/dam1508/Pulpit/Arko/test3.txt"
+one:		.asciiz "1"
 incNumber:	.space 128
 newLine:	.space 1024
 buffer:		.space 1024
-#newLine:	.asciiz "\n"
 
 		.text
 		
 main:
 		
+	li $v0, 13			#create file if it doesn't exist
+	la $a0, fileNameLin
+	li $a1, 9
+	li $a2, 0
+	syscall
+	
+	move $s0, $v0
+	
+	bltz $v0, no_file		#instructions if it doesn't exist
+	
+	li $v0, 16			#if it does, close it and open to read
+	move $a0, $s0
+	syscall
+	
 	li $v0, 13			#opening file to read
 	la $a0, fileNameLin
 	li $a1, 0
 	li $a2, 0
 	syscall
 	
-	#bltz $v0, no_file		#instructions if it doesn't exist
-	
-	move $s0, $v0
+	move $s1, $v0
 	
 read_file:
 
 	li $v0, 14
-	move $a0, $s0
+	move $a0, $s1
 	la $a1, buffer
 	li $a2, 1023
 	syscall
@@ -46,43 +57,48 @@ read_file:
 	
 load_byte:
 
-	lb $t0, 0($s5)	
+	lb $t0, ($s5)	
 	
 	beq $t0, $0, increment_setup	#EOF
-	#seq $t9, $t0, '\n'
 	beq $t0, '\n', new_line		#end of line
 	
 	addiu $t6, $t6, 1		#line length increase
 	
-	
 	beq $t0, '\r', next
 	beq $t0, ' ', new_word		#end of word
-	beq $t0, '\t', new_word	
+	beq $t0, '\t', new_word		#treat the same as space
 	
 	beq $t3, 2, next_nan		#it's already not a number, so go to next
 	beq $t0, '.', next_dot		#it's a dot
 	bltu $t0, '0', next_nan		#if it's less than 0 go to next step (not a number)
 	bgtu $t0, '9', next_nan		#if it's greater than 9 go to next step (not a number)
-	
-	#b next_num 			#if non of these happened, it's a number
-
-
+	#if non of these happened, it's a number
 	
 next_num:
 
-	li $t3, 1
-	addiu $t4, $t4, 1
+	li $t3, 1			#it is still a number
+	addiu $t4, $t4, 1		#increase number length
 	
 	b next
 	
 next_dot:
 
-	beq $t3, 0, next_nan
+	beq $t3, 0, next_nan		#if dot is a first character in a word, it's not a number
+	addiu $t5, $t5, 1		#increase current number of dots in a word
+	bgtu $t5, 1, next_nan		#if there were more than one dots in a word, it's not a dot
+	addiu $s5, $s5, 1		#looks what is after the dot
+	lb $t0, ($s5)
+	bltu $t0, '0', next_dot_nan	#if it's less than 0 go to next step (not a number)
+	bgtu $t0, '9', next_dot_nan	#if it's greater than 9 go to next step (not a number)
+	#else it's a number
+	li $t3, 1
+	addiu $t4, $t4, 1
+	b load_byte
 	
-	addiu $t5, $t5, 1
-	
-	bgtu $t5, 1, next_nan
-	b next_num
+next_dot_nan:
+
+	li $t3, 2
+	b load_byte
 	
 next_nan:
 	
@@ -116,15 +132,20 @@ new_word:
 	li $t5, 0			#resetting number of dots
 	
 	b next
-		
-save_line_length:
+	
+save_line_length_forced:
 
-	#move $t8, $t6			#saves line length
 	li $t6, 0			#resetting line length
 	
-	beq $t5, 1, number_has_dot	#remembers that number has a dot
-	li $t9, 0			#remembers that the new number didnt have a dot
-	li $t5, 0			#resetting number of dots
+	beq $t5, 1, number_has_dot	#if the number had dot, remember it
+	li $t9, 0			#else just reset
+	li $t5, 0
+	
+	b load_byte
+	
+save_line_length:
+
+	li $t6, 0			#resetting line length
 	
 	b load_byte
 	
@@ -137,6 +158,7 @@ next:
 number_has_dot:
 
 	li $t9, 1
+	li $t5, 0
 	b load_byte
 	
 save_num_address:
@@ -144,12 +166,14 @@ save_num_address:
 	subu $t2, $t6, $t4		#saves number place in line
 	subu $t2, $t2, 1
 	subu $s2, $s5, 1
+	
 	move $s4, $s3			#saves address of a line with a number
 	move $t1, $t4
 	
 	li $t3, 0			#resetting t3
 	li $t4, 0			#resetting number length
 	li $t7, 1			#line has a number 
+	
 	addiu $s5, $s5, 1		#next char address
 	
 	beq $t5, 1, number_has_dot	#remembers that number has a dot
@@ -161,8 +185,8 @@ save_num_address:
 save_num_address2:
 
 	subu $t2, $t6, $t4		#saves number address
-	subu $t2, $t2, 1
-	subu $s2, $s5, 2
+	subu $s2, $s5, 1
+	
 	move $s4, $s3			#saves address of a line with a number
 	move $t1, $t4
 
@@ -174,7 +198,7 @@ save_num_address2:
 	
 	move $s3, $s5			#save address of a new line
 	
-	b save_line_length
+	b save_line_length_forced
 	
 found_dot:
 
@@ -183,13 +207,13 @@ found_dot:
 	
 increment_setup:
 	
+	beqz $t1, no_number		#there is no number in a file
 	move $t3, $t1			#save number length for later
 	addu $s7, $s7, $t1
+	beq $t9, 1, find_dot
 	
 increment_number:
 
-	beq $t9, 1, find_dot
-	
 	lb $t0, ($s2)			#loads byte from saved number
 	subiu $s2, $s2, 1		#moves address of saved number buffer
 	beq $t0, '9', nine_exc		#if the first digit is 9 go to special exception
@@ -217,7 +241,6 @@ nine_exc:
 	subiu $t0, $t0, 9		#makes 0 from 9 (9 changes into 10)
 	sb $t0, ($s7)			#saves byte to a buffer
 	subiu $t1, $t1, 1		#help as previously
-	#b copy_rest
 	beq $t1, 0, finish_number	#if whole number is done finish the number (add 1 in front of it)
 	lb $t0, ($s2)			#loads next byte
 	subiu $s2, $s2, 1		##moving buffers
@@ -269,10 +292,6 @@ copy_line:
 	beq $t0, '\n', write_to_file	#if its a end of line, write copied line to file
 	sb $t0, ($s6)			#save byte to buffer
 	
-	li $v0, 4
-	move $a0, $s6
-	syscall
-	
 	addiu $s4, $s4, 1		#moving buffers
 	addiu $s6, $s6, 1
 	subiu $t2, $t2, 1		#one byte closer to the start of the saved number
@@ -294,36 +313,66 @@ copy_number:
 	
 write_to_file:
 	
-	subu $s6, $s6, $t8
+	subu $s6, $s6, $t8		#move to the beggining of the buffer
 	
-	li $v0, 16
-	move $a0, $s0
+	li $v0, 16			#close the file to read
+	move $a0, $s1
 	syscall			
 	
-	li $v0, 13			
+	li $v0, 13			#open file to append to it
 	la $a0, fileNameLin
 	li $a1, 9
 	la $a2, 0
 	syscall
 	
-	move $s1, $v0
+	move $s0, $v0
 	
-	li $v0, 15
-	move $a0, $s1
+	li $v0, 15			#append to file
+	move $a0, $s0
 	move $a1, $s6
 	move $a2, $t8
 	syscall
 	
 	b end
 	
-end:
+no_number:
 	
-	li $v0, 1
-	move $a0, $t2
+	li $v0, 16			#close the file to read
+	move $a0, $s1
+	syscall			
+	
+	li $v0, 13			#open file to append to it
+	la $a0, fileNameLin
+	li $a1, 9
+	la $a2, 0
 	syscall
 	
-	li $v0, 16
-	move $a0, $s1
+	move $s0, $v0
+	
+	li $v0, 15			#because there were no numbers inside the file, just write 1 at the end
+	move $a0, $s0
+	la $a1, one
+	li $a2, 1
+	syscall
+	
+	b end
+	
+no_file:
+	
+	move $s0, $v0
+	
+	li $v0, 15			#if there was no file create one with number 1 in it
+	move $a0, $s0
+	la $a1, one
+	li $a2, 1
+	syscall
+	
+	b end
+	
+end:
+	
+	li $v0, 16			#close the file and end the programme
+	move $a0, $s0
 	syscall
 	
 	li $v0, 10
